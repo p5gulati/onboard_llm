@@ -1,7 +1,8 @@
 from fastapi import FastAPI
+from pydantic import BaseModel
 import psycopg2
 import chromadb
-from pydantic import BaseModel
+import uuid
 
 db_params = {
     "host": "postgres",
@@ -9,6 +10,11 @@ db_params = {
     "user": "user",
     "password": "password",
     "port": 5432
+}
+
+chroma_params = {
+    "host": "chromadb",
+    "port": 8000
 }
 
 app = FastAPI()
@@ -43,6 +49,7 @@ async def health_check():
         chroma_client = chromadb.HttpClient(host='chromadb', port=8000)
         chroma_connection = chroma_client.heartbeat()
         chromadb_status = "connected"
+
     except Exception as error:
         chroma_status = f"error: {str(error)}"
 
@@ -55,9 +62,8 @@ async def health_check():
 class TextInput(BaseModel):
     text: str
 
-@app.post("/test-pipeline")
+@app.post("/write-pg")
 async def insert_data(data: TextInput):
-
     text = data.text
 
     try:
@@ -84,3 +90,55 @@ async def insert_data(data: TextInput):
     
     except Exception as error:
         return ({"status": "error", "message": str(error)})
+
+@app.get("/read-pg")
+async def read_data():
+
+    try:
+        connection = psycopg2.connect(**db_params)
+        cursor = connection.cursor()
+        cursor.execute("SELECT * from test_data")
+        records = cursor.fetchall()
+        cursor.close()
+        connection.close()
+        return {
+            "status": "success",
+            "data": records}
+
+    except Exception as error:
+        return ({"status" : "error", "message" : str(error)})
+
+@app.post("/write-chroma")
+async def write_chroma(data: TextInput):
+    text = data.text
+    client = chromadb.HttpClient(**chroma_params)
+
+    try:
+        collection = client.create_collection(name="my_collection")
+        collection.add(documents = [text], ids = [str(uuid.uuid4())])
+
+        return {
+            "status" : "success",
+            "message" : "Data inserted into ChromaDB",
+            "doc_count" : collection.count()
+        }
+
+    except Exception as error:
+        return {"status" : "error", "message" : str(error)}
+
+@app.get("/get-chroma")
+async def read_chroma():
+    client = chromadb.HttpClient(**chroma_params)
+    collections = client.list_collections(limit = 1)
+
+    try:
+        return {
+            "collection" : [c.name for c in collections],
+            "status" : "retrieved successfully"
+        }
+
+    except Exception as error:
+        return {"status" : "error", "message" : str(error)}
+
+# @app.post("/ingest")
+# async def ingest_code()
