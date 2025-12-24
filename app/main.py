@@ -3,6 +3,8 @@ from pydantic import BaseModel
 import psycopg2
 import chromadb
 import uuid
+from langchain_text_splitters import CharacterTextSplitter
+from sentence_transformers import SentenceTransformer
 
 db_params = {
     "host": "postgres",
@@ -139,6 +141,37 @@ async def read_chroma():
 
     except Exception as error:
         return {"status" : "error", "message" : str(error)}
+    
+class IngestInput(BaseModel):
+    file_name: str
+    file_text: str
 
-# @app.post("/ingest")
-# async def ingest_code()
+text_splitter = CharacterTextSplitter.from_tiktoken_encoder(
+    encoding_name="cl100k_base", chunk_size=100, chunk_overlap=0
+)
+embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+
+@app.post("/ingest")
+async def ingest_code(data: IngestInput):
+
+    file_name = data.file_name
+    file_text = data.file_text
+
+    try:
+        texts = text_splitter.split_text(file_text)
+        embeddings = embedding_model.encode(texts).tolist()
+        client = chromadb.HttpClient(**chroma_params)
+        collection = client.get_or_create_collection(name = file_name)
+
+    
+        ids = [str(uuid.uuid4()) for _ in texts]
+        collection.add(documents = texts, ids = ids)
+
+        return {
+            "status": "success",
+            "message": f"Ingested {len(texts)} chunks into collection '{file_name}'",
+            "doc_count": collection.count()
+        }
+
+    except Exception as error:
+        return {"status": "error", "message": str(error)}
