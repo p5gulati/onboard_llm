@@ -5,6 +5,7 @@ import chromadb
 import uuid
 from langchain_text_splitters import CharacterTextSplitter
 from sentence_transformers import SentenceTransformer
+import random
 
 db_params = {
     "host": "postgres",
@@ -116,13 +117,14 @@ async def write_chroma(data: TextInput):
     client = chromadb.HttpClient(**chroma_params)
 
     try:
-        collection = client.create_collection(name="my_collection")
+        collection = client.create_collection(name=str("collection_" + str(random.randint(1, 1000))))
         collection.add(documents = [text], ids = [str(uuid.uuid4())])
 
         return {
             "status" : "success",
             "message" : "Data inserted into ChromaDB",
-            "doc_count" : collection.count()
+            "col_count" : collection.count(),
+            "collection_name": collection.name
         }
 
     except Exception as error:
