@@ -6,6 +6,7 @@ import uuid
 from langchain_text_splitters import CharacterTextSplitter
 from sentence_transformers import SentenceTransformer
 import random
+from services import generate_answer, search_similar_chunks
 
 db_params = {
     "host": "postgres",
@@ -177,3 +178,43 @@ async def ingest_code(data: IngestInput):
 
     except Exception as error:
         return {"status": "error", "message": str(error)}
+
+class QueryInput(BaseModel):
+    question: str
+    collection_name: str
+
+@app.post("/query")
+async def query_code(data: QueryInput):
+
+    try:
+
+        code_chunks = search_similar_chunks(
+            question = data.question,
+            collection_name = data.collection_name,
+            top_k = 5
+        )
+        
+        if not code_chunks:
+            return {
+                "status": "error",
+                "message": f"No code found in collection '{data.collection_name}'"
+            }
+        
+        answer = generate_answer(
+            question = data.question,
+            code_chunks = code_chunks
+        )
+        
+        return {
+            "status": "success",
+            "question": data.question,
+            "answer": answer,
+            "sources": code_chunks,
+            "num_sources": len(code_chunks)
+        }
+        
+    except Exception as e:
+        return {
+            "status": "Something went wrong...",
+            "message": str(e)
+        }
