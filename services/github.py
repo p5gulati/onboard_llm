@@ -30,7 +30,7 @@ IGNORE_DIRS = {
     '.vscode'
 }
 
-def clone_repo(repo_name: str, repo_url: str) -> None:
+def clone_repository(repo_url: str, repo_name: str) -> None:
 
     repos_dir.mkdir(parents=True, exist_ok=True)
     repo_path = repos_dir / repo_name

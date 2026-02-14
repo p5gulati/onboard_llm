@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, BackgroundTasks
 from pydantic import BaseModel
 import psycopg2
 import chromadb
@@ -6,7 +6,7 @@ import uuid
 from langchain_text_splitters import CharacterTextSplitter
 from sentence_transformers import SentenceTransformer
 import random
-from services import generate_answer, search_similar_chunks
+from services import generate_answer, search_similar_chunks, ingest_repository
 
 db_params = {
     "host": "postgres",
@@ -181,40 +181,83 @@ async def ingest_code(data: IngestInput):
 
 class QueryInput(BaseModel):
     question: str
-    collection_name: str
+    repo_name: str  # User provides repo name, not collection name
 
 @app.post("/query")
 async def query_code(data: QueryInput):
-
     try:
-
+        collection_name = f"repo_{data.repo_name}"  # Translate to collection name
+        
         code_chunks = search_similar_chunks(
-            question = data.question,
-            collection_name = data.collection_name,
-            top_k = 5
+            question=data.question,
+            collection_name=collection_name,
+            top_k=5
         )
         
         if not code_chunks:
-            return {
-                "status": "error",
-                "message": f"No code found in collection '{data.collection_name}'"
-            }
+            return {"status": "error", "message": "No code found"}
         
         answer = generate_answer(
-            question = data.question,
-            code_chunks = code_chunks
+            question=data.question,
+            code_chunks=code_chunks
         )
         
         return {
             "status": "success",
             "question": data.question,
             "answer": answer,
-            "sources": code_chunks,
-            "num_sources": len(code_chunks)
+            "sources": code_chunks
         }
         
     except Exception as e:
-        return {
-            "status": "Something went wrong...",
-            "message": str(e)
-        }
+        return {"status": "error", "message": str(e)}
+
+class IngestRepoInput(BaseModel):
+    repo_url: str
+    repo_name: str
+
+jobs = {}
+
+@app.post("/ingest-repo")
+async def ingest_repo(data: IngestRepoInput, background_tasks: BackgroundTasks):
+    
+    job_id = str(uuid.uuid4())
+    jobs[job_id] = {"status": "processing", "repo_name": data.repo_name}
+    
+    background_tasks.add_task(
+        run_ingestion,
+        job_id,
+        data.repo_url,
+        data.repo_name
+    )
+    
+    return {
+        "job_id": job_id,
+        "status": "processing",
+        "message": f"Started ingesting {data.repo_name}. Check /status/{job_id}"
+    }
+
+
+def run_ingestion(job_id: str, repo_url: str, repo_name: str):
+
+    result = ingest_repository(repo_url, repo_name)
+    jobs[job_id] = result
+
+
+@app.get("/status/{job_id}")
+async def check_status(job_id: str):
+
+    if job_id not in jobs:
+        return {"status": "error", "message": "Job not found"}
+    return jobs[job_id]
+
+
+@app.get("/repos")
+async def list_repos():
+
+    completed = {
+        job_id: info 
+        for job_id, info in jobs.items() 
+        if info.get("status") == "success"
+    }
+    return {"repos": completed}
