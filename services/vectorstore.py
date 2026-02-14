@@ -1,5 +1,6 @@
 import chromadb
-from typing import List
+import uuid
+from typing import List, Dict
 from sentence_transformers import SentenceTransformer
 
 embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
@@ -21,3 +22,19 @@ def search_similar_chunks(question: str, collection_name: str, top_k: int = 5) -
     )
     
     return results['documents'][0]
+
+def store_code_chunks(collection_name: str, code_chunks: List[str], metadatas: List[Dict] = None) -> None:
+
+    # Generate embeddings for all chunks at once (batch = faster)
+    embeddings = embedding_model.encode(code_chunks).tolist()
+
+    ids = [str(uuid.uuid4()) for _ in code_chunks]
+    
+    collection = chroma_client.get_or_create_collection(name=collection_name)
+    
+    collection.add(
+        documents=code_chunks,
+        embeddings=embeddings,
+        ids=ids,
+        metadatas=metadatas if metadatas else [{} for _ in code_chunks]
+    )

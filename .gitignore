@@ -1,2 +1,4 @@
 myenv
 __pycache__
+app/__pycache__
+services/__pycache__
